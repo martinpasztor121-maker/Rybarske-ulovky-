@@ -1,0 +1,2047 @@
+<!DOCTYPE html>
+<html lang="sk" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Rybársky Denník">
+    <title>Rybársky Denník PRO</title>
+
+    <!-- Dynamický PWA Manifest pre inštaláciu na plochu -->
+    <link rel="manifest" id="pwa-manifest">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230f172a'/%3E%3Cpath d='M390 256c-45-65-115-95-190-95-45 0-85 15-115 35l-45-35v190l45-35c30 20 70 35 115 35 75 0 145-30 190-95z' fill='%2310b981'/%3E%3Ccircle cx='330' cy='235' r='16' fill='%230f172a'/%3E%3C/svg%3E">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#151e32',
+                            900: '#0f172a',
+                            950: '#090d16',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Vlastné štýly pre plynulý mobilný PWA zážitok */
+        body {
+            background-color: #090d16;
+            color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior-y: none;
+            padding-bottom: calc(84px + env(safe-area-inset-bottom));
+        }
+
+        /* Skrytie scrollbarov pri horizontálnych lištách */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* Bezpečná zóna pre spodnú navigáciu na iPhone / moderných Androidoch */
+        .bottom-nav-safe {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        /* Animácia modálnych okien */
+        @keyframes slideUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slide-up {
+            animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.96); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.2s ease-out forwards;
+        }
+
+        /* Štýly pre vstupy dátumu v tmavom režime */
+        input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body class="antialiased selection:bg-emerald-500 selection:text-white">
+
+    <!-- Horná hlavička -->
+    <header class="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                <i data-lucide="fish" class="w-5 h-5 text-slate-950 stroke-[2.5]"></i>
+            </div>
+            <div>
+                <h1 class="font-extrabold text-base tracking-tight text-white leading-none">Rybársky Denník <span class="text-emerald-400">PRO</span></h1>
+                <p id="header-subtitle" class="text-[11px] text-slate-400 mt-0.5 font-medium">Načítavam dáta...</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <button onclick="openWeatherQuickModal()" class="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60 active:scale-95 transition" title="Aktuálne podmienky pri vode">
+                <i data-lucide="cloud-sun" class="w-4 h-4 text-amber-400"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Notifikačný Toast (namiesto alert) -->
+    <div id="toast-container" class="fixed top-16 left-4 right-4 z-50 pointer-events-none flex flex-col items-center gap-2"></div>
+
+    <!-- HLAVNÝ OBSAH APLIKÁCIE -->
+    <main class="max-w-xl mx-auto px-4 pt-4">
+
+        <!-- ========================================== -->
+        <!-- 1. SEKCIA: ÚLOVKY (ZOZNAM A FILTRE)        -->
+        <!-- ========================================== -->
+        <section id="view-catches" class="space-y-4">
+            <!-- Vyhľadávanie a rýchle filtre -->
+            <div class="space-y-2.5">
+                <div class="relative">
+                    <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+                    <input type="text" id="search-input" oninput="renderCatches()" placeholder="Hľadať druh, revír, nástrahu, poznámku..."
+                        class="w-full bg-slate-900 border border-slate-800 rounded-2xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition">
+                </div>
+
+                <!-- Horizontálne filtre podľa druhu ryby -->
+                <div id="species-filter-bar" class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                    <!-- Dynamicky generované čipy -->
+                </div>
+
+                <!-- Dodatočný filter metódy a zoradenia -->
+                <div class="flex items-center justify-between gap-2">
+                    <select id="method-filter" onchange="renderCatches()" class="bg-slate-900 border border-slate-800 text-slate-300 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500">
+                        <option value="ALL">Všetky spôsoby lovu</option>
+                        <option value="Breh">Z brehu</option>
+                        <option value="Kajak">Z kajaku</option>
+                        <option value="Čln">Z člna</option>
+                        <option value="Brodenie">Brodenie</option>
+                    </select>
+
+                    <select id="sort-select" onchange="renderCatches()" class="bg-slate-900 border border-slate-800 text-slate-300 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500">
+                        <option value="date-desc">Najnovšie prvé</option>
+                        <option value="length-desc">Najdlhšie prvé</option>
+                        <option value="weight-desc">Najťažšie prvé</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Banner pre ukážkové dáta -->
+            <div id="demo-banner" class="hidden bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3.5 flex items-center justify-between gap-3">
+                <div class="flex items-center gap-2.5">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-amber-400 shrink-0"></i>
+                    <p class="text-xs text-amber-200">Zobrazené sú ukážkové úlovky. Môžeš ich kedykoľvek vymazať.</p>
+                </div>
+                <button onclick="clearDemoData()" class="px-3 py-1.5 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl shrink-0 active:scale-95 transition">
+                    Vymazať demo
+                </button>
+            </div>
+
+            <!-- Zoznam úlovkov -->
+            <div id="catches-list" class="space-y-3">
+                <!-- Dynamicky naplnené karty úlovkov -->
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- 2. SEKCIA: PRIDAŤ / UPRAVIŤ ÚLOVOK         -->
+        <!-- ========================================== -->
+        <section id="view-add" class="hidden space-y-5 pb-6">
+            <div class="flex items-center justify-between">
+                <h2 id="form-title" class="text-lg font-bold text-white flex items-center gap-2">
+                    <i data-lucide="plus-circle" class="w-5 h-5 text-emerald-400"></i>
+                    Nový úlovok
+                </h2>
+                <button type="button" onclick="resetForm()" class="text-xs text-slate-400 hover:text-white px-2.5 py-1 rounded-lg bg-slate-800">
+                    Vyčistiť formulár
+                </button>
+            </div>
+
+            <form id="catch-form" onsubmit="saveCatch(event)" class="space-y-5">
+                <input type="hidden" id="edit-catch-id" value="">
+
+                <!-- KROK 1: FOTOGRAFIA ÚLOVKU -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2.5">Fotografia úlovku</label>
+                    
+                    <div id="photo-preview-wrapper" class="hidden relative mb-3 rounded-xl overflow-hidden border border-slate-700 bg-slate-950">
+                        <img id="photo-preview-img" src="" alt="Náhľad úlovku" class="w-full max-h-64 object-cover">
+                        <button type="button" onclick="removeSelectedPhoto()" class="absolute top-2.5 right-2.5 p-2 bg-slate-950/80 text-rose-400 rounded-xl border border-slate-700 hover:bg-rose-500 hover:text-white transition">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+
+                    <label for="photo-input" class="flex flex-col items-center justify-center w-full py-5 border-2 border-dashed border-slate-700 hover:border-emerald-500/70 rounded-xl cursor-pointer bg-slate-950/50 transition active:scale-[0.99]">
+                        <div class="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center mb-2">
+                            <i data-lucide="camera" class="w-5 h-5 text-emerald-400"></i>
+                        </div>
+                        <span class="text-sm font-semibold text-slate-200">Odfotiť alebo vybrať z galérie</span>
+                        <span class="text-[11px] text-slate-500 mt-0.5">Automatická optimalizácia pre šetrenie miesta</span>
+                        <input id="photo-input" type="file" accept="image/*" class="hidden" onchange="handlePhotoUpload(event)">
+                    </label>
+                </div>
+
+                <!-- KROK 2: DRUH RYBY -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Druh ryby *</label>
+                    <div id="quick-species-buttons" class="flex flex-wrap gap-2">
+                        <!-- Tlačidlá druhov rýb -->
+                    </div>
+                    <input type="text" id="species-input" required placeholder="Alebo napíš vlastný druh ryby..."
+                        class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                </div>
+
+                <!-- KROK 3: MIERY (DĹŽKA A VÁHA) -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+                        <label for="length-input" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Dĺžka (cm) *</label>
+                        <div class="relative">
+                            <input type="number" id="length-input" step="0.5" min="1" max="350" required placeholder="napr. 64"
+                                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-3 text-lg font-bold text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500">
+                            <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">cm</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+                        <label for="weight-input" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Váha (kg)</label>
+                        <div class="relative">
+                            <input type="number" id="weight-input" step="0.01" min="0.01" max="200" placeholder="napr. 2.45"
+                                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-3 text-lg font-bold text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500">
+                            <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">kg</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- KROK 4: NÁSTRAHA (JEDNÝM ŤUKNUTÍM Z KRABIČKY) -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Nástraha</label>
+                        <button type="button" onclick="switchTab('tackle')" class="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                            <i data-lucide="briefcase" class="w-3 h-3"></i> Upraviť krabičku
+                        </button>
+                    </div>
+                    
+                    <div id="quick-lure-buttons" class="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1">
+                        <!-- Nástrahy z krabičky -->
+                    </div>
+
+                    <input type="text" id="lure-input" placeholder="Vyber vyššie alebo napíš nástrahu (napr. Salmo Hornet 4cm)..."
+                        class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                </div>
+
+                <!-- KROK 5: REVÍR, SPÔSOB LOVU A ČAS -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Revír / Voda *</label>
+                        <div id="recent-waters-chips" class="flex flex-wrap gap-1.5 mb-2">
+                            <!-- Posledné revíry -->
+                        </div>
+                        <input type="text" id="water-input" required placeholder="Napr. Hron č. 3, VN Duchonka, Dunaj..."
+                            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Spôsob lovu</label>
+                        <div class="grid grid-cols-4 gap-2" id="method-selector">
+                            <button type="button" data-method="Breh" onclick="selectMethod('Breh')" class="method-btn py-2.5 px-2 rounded-xl border text-xs font-semibold transition flex flex-col items-center gap-1 bg-emerald-500/20 border-emerald-500 text-emerald-300">
+                                <i data-lucide="footprints" class="w-4 h-4"></i> Breh
+                            </button>
+                            <button type="button" data-method="Kajak" onclick="selectMethod('Kajak')" class="method-btn py-2.5 px-2 rounded-xl border text-xs font-semibold transition flex flex-col items-center gap-1 bg-slate-950 border-slate-800 text-slate-400">
+                                <i data-lucide="compass" class="w-4 h-4"></i> Kajak
+                            </button>
+                            <button type="button" data-method="Čln" onclick="selectMethod('Čln')" class="method-btn py-2.5 px-2 rounded-xl border text-xs font-semibold transition flex flex-col items-center gap-1 bg-slate-950 border-slate-800 text-slate-400">
+                                <i data-lucide="anchor" class="w-4 h-4"></i> Čln
+                            </button>
+                            <button type="button" data-method="Brodenie" onclick="selectMethod('Brodenie')" class="method-btn py-2.5 px-2 rounded-xl border text-xs font-semibold transition flex flex-col items-center gap-1 bg-slate-950 border-slate-800 text-slate-400">
+                                <i data-lucide="waves" class="w-4 h-4"></i> Brodenie
+                            </button>
+                        </div>
+                        <input type="hidden" id="method-input" value="Breh">
+                    </div>
+
+                    <div>
+                        <label for="datetime-input" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Dátum a čas záberu</label>
+                        <input type="datetime-local" id="datetime-input" required
+                            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500">
+                    </div>
+                </div>
+
+                <!-- KROK 6: GPS POLOHA A POČASIE NA 1 KLIK -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">GPS & Počasie pri zábere</span>
+                        <span id="moon-phase-badge" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium"></span>
+                    </div>
+
+                    <button type="button" id="btn-fetch-gps-weather" onclick="fetchGpsAndWeather()"
+                        class="w-full py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-400 font-semibold text-sm flex items-center justify-center gap-2 transition active:scale-[0.98]">
+                        <i data-lucide="map-pin" class="w-4 h-4"></i>
+                        <span>Načítať GPS polohu a aktuálne počasie</span>
+                    </button>
+
+                    <!-- Údaje o počasí a GPS -->
+                    <div class="grid grid-cols-3 gap-2 pt-1">
+                        <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-2.5">
+                            <label class="text-[10px] text-slate-500 block">Teplota (°C)</label>
+                            <input type="number" step="0.1" id="temp-input" placeholder="--" class="w-full bg-transparent text-sm font-bold text-white focus:outline-none mt-0.5">
+                        </div>
+                        <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-2.5">
+                            <label class="text-[10px] text-slate-500 block">Tlak (hPa)</label>
+                            <input type="number" step="1" id="pressure-input" placeholder="--" class="w-full bg-transparent text-sm font-bold text-white focus:outline-none mt-0.5">
+                        </div>
+                        <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-2.5">
+                            <label class="text-[10px] text-slate-500 block">Vietor (km/h)</label>
+                            <input type="number" step="1" id="wind-input" placeholder="--" class="w-full bg-transparent text-sm font-bold text-white focus:outline-none mt-0.5">
+                        </div>
+                    </div>
+
+                    <div id="gps-coords-display" class="hidden text-xs text-slate-400 flex items-center justify-between bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
+                        <span id="gps-text" class="font-mono text-[11px]"></span>
+                        <button type="button" onclick="clearGps()" class="text-rose-400 text-[11px] font-semibold">Zrušiť GPS</button>
+                    </div>
+                    <input type="hidden" id="lat-input" value="">
+                    <input type="hidden" id="lng-input" value="">
+                    <input type="hidden" id="weather-desc-input" value="">
+                </div>
+
+                <!-- KROK 7: POZNÁMKA A PUSTENIE RYBY -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                    <label for="notes-input" class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Poznámka k lovu</label>
+                    <textarea id="notes-input" rows="2" placeholder="Hĺbka vody, vedenie nástrahy, aktivita rýb..."
+                        class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"></textarea>
+
+                    <label class="flex items-center justify-between pt-1 cursor-pointer">
+                        <span class="text-sm font-medium text-slate-200 flex items-center gap-2">
+                            <i data-lucide="heart-handshake" class="w-4 h-4 text-emerald-400"></i>
+                            Chyť a pusť (ryba vrátená vode)
+                        </span>
+                        <input type="checkbox" id="released-input" checked class="w-5 h-5 accent-emerald-500 rounded">
+                    </label>
+                </div>
+
+                <!-- TLAČIDLO ULOŽIŤ -->
+                <button type="submit" class="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold text-base shadow-lg shadow-emerald-500/25 active:scale-[0.98] transition flex items-center justify-center gap-2">
+                    <i data-lucide="check-circle-2" class="w-5 h-5 stroke-[2.5]"></i>
+                    <span id="submit-btn-text">Uložiť úlovok do denníka</span>
+                </button>
+            </form>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- 3. SEKCIA: ŠTATISTIKY A SIEŇ SLÁVY (PB)    -->
+        <!-- ========================================== -->
+        <section id="view-stats" class="hidden space-y-5 pb-6">
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                <i data-lucide="bar-chart-3" class="w-5 h-5 text-emerald-400"></i>
+                Štatistiky & Rekordy
+            </h2>
+
+            <!-- 4 hlavné metriky -->
+            <div class="grid grid-cols-2 gap-3" id="stats-kpi-grid">
+                <!-- Dynamicky naplnené -->
+            </div>
+
+            <!-- SIEŇ SLÁVY - OSOBNÉ REKORDY (PB) -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-bold text-amber-400 flex items-center gap-2">
+                        <i data-lucide="trophy" class="w-4 h-4"></i>
+                        Sieň slávy (Osobné rekordy PB)
+                    </h3>
+                    <span class="text-[11px] text-slate-400">Podľa dĺžky</span>
+                </div>
+                <div id="pb-hall-of-fame" class="space-y-2.5">
+                    <!-- Dynamicky naplnené PB rekordy -->
+                </div>
+            </div>
+
+            <!-- GRAF: NAJÚSPEŠNEJŠIE NÁSTRAHY -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                    <i data-lucide="award" class="w-4 h-4 text-emerald-400"></i>
+                    Top nástrahy (počet úlovkov)
+                </h3>
+                <div id="chart-lures" class="space-y-2.5"></div>
+            </div>
+
+            <!-- GRAF: ÚLOVKY PODĽA MESIACOV -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                    <i data-lucide="calendar" class="w-4 h-4 text-emerald-400"></i>
+                    Úlovky podľa mesiacov
+                </h3>
+                <div id="chart-months" class="h-36 flex items-end justify-between gap-1.5 pt-4 px-1"></div>
+            </div>
+
+            <!-- GRAF: ÚSPEŠNOSŤ PODĽA DENNEJ DOBY A TLAKU -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                    <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                        <i data-lucide="clock" class="w-4 h-4 text-amber-400"></i>
+                        Denná doba záberov
+                    </h3>
+                    <div id="chart-timeofday" class="space-y-2"></div>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                    <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                        <i data-lucide="gauge" class="w-4 h-4 text-sky-400"></i>
+                        Atmosférický tlak
+                    </h3>
+                    <div id="chart-pressure" class="space-y-2"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- 4. SEKCIA: KRABIČKA NÁSTRAH                -->
+        <!-- ========================================== -->
+        <section id="view-tackle" class="hidden space-y-5 pb-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i data-lucide="briefcase" class="w-5 h-5 text-emerald-400"></i>
+                        Moja krabička nástrah
+                    </h2>
+                    <p class="text-xs text-slate-400">Uložené nástrahy vyberieš pri love jedným ťuknutím.</p>
+                </div>
+            </div>
+
+            <!-- Formulár na pridanie novej nástrahy -->
+            <form onsubmit="addNewLure(event)" class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-emerald-400">Pridať nástrahu do krabičky</h3>
+                <div class="grid grid-cols-2 gap-2.5">
+                    <input type="text" id="new-lure-name" required placeholder="Názov (napr. Salmo Hornet 4)"
+                        class="col-span-2 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                    
+                    <select id="new-lure-type" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+                        <option value="Wobler">Wobler</option>
+                        <option value="Guma / Ripper">Guma / Ripper</option>
+                        <option value="Blyskáč / Rotačka">Blyskáč / Rotačka</option>
+                        <option value="Plandavka">Plandavka</option>
+                        <option value="Jig / Streamer">Jig / Streamer</option>
+                        <option value="Boilies / Peleta">Boilies / Peleta</option>
+                        <option value="Iné">Iné</option>
+                    </select>
+
+                    <input type="text" id="new-lure-spec" placeholder="Farba / váha (napr. Hot Perch 4g)"
+                        class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                </div>
+                <button type="submit" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition active:scale-[0.98]">
+                    + Pridať do krabičky
+                </button>
+            </form>
+
+            <!-- Zoznam nástrah v krabičke -->
+            <div id="tackle-list" class="space-y-2.5">
+                <!-- Dynamicky naplnené -->
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- 5. SEKCIA: ZÁLOHA A EXPORT DÁT             -->
+        <!-- ========================================== -->
+        <section id="view-backup" class="hidden space-y-5 pb-6">
+            <div>
+                <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i data-lucide="database" class="w-5 h-5 text-emerald-400"></i>
+                    Záloha & Export dát
+                </h2>
+                <p class="text-xs text-slate-400 mt-0.5">Tvoje dáta sú uložené bezpečne priamo v pamäti tohto zariadenia (IndexedDB).</p>
+            </div>
+
+            <!-- Stav pamäte -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-slate-400">Uložené záznamy v denníku</p>
+                    <p id="storage-stats-text" class="text-base font-bold text-white mt-0.5">0 úlovkov • 0 nástrah</p>
+                </div>
+                <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                    <i data-lucide="hard-drive" class="w-5 h-5 text-emerald-400"></i>
+                </div>
+            </div>
+
+            <!-- Export do Excelu (CSV) -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div class="flex items-start gap-3">
+                    <div class="p-2.5 rounded-xl bg-teal-500/10 text-teal-400 shrink-0">
+                        <i data-lucide="file-spreadsheet" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white">Export do Excelu (CSV)</h3>
+                        <p class="text-xs text-slate-400 mt-0.5">Vytvorí prehľadnú tabuľku so slovenskou diakritikou pre otvorenie v Exceli alebo Google Tabuľkách.</p>
+                    </div>
+                </div>
+                <button onclick="exportCSV()" class="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-700 font-semibold text-xs flex items-center justify-center gap-2 transition active:scale-[0.98]">
+                    <i data-lucide="download" class="w-4 h-4"></i> Stiahnuť Excel tabuľku (.csv)
+                </button>
+            </div>
+
+            <!-- Kompletná JSON záloha vrátane fotiek -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                <div class="flex items-start gap-3">
+                    <div class="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 shrink-0">
+                        <i data-lucide="shield-check" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white">Kompletná záloha (JSON + Fotky)</h3>
+                        <p class="text-xs text-slate-400 mt-0.5">Uloží všetky úlovky, nástrahy aj komprimované fotografie do jedného súboru pre prenos na nový mobil.</p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2.5">
+                    <button onclick="exportJSON()" class="py-3 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-[0.98]">
+                        <i data-lucide="download" class="w-4 h-4"></i> Stiahnuť zálohu
+                    </button>
+                    <label class="py-3 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-[0.98]">
+                        <i data-lucide="upload" class="w-4 h-4"></i> Obnoviť zo zálohy
+                        <input type="file" accept=".json" onchange="importJSON(event)" class="hidden">
+                    </label>
+                </div>
+            </div>
+
+            <!-- Nebezpečná zóna -->
+            <div class="bg-rose-950/20 border border-rose-900/40 rounded-2xl p-4 space-y-2.5">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-rose-400">Správa databázy</h3>
+                <button onclick="confirmClearAllData()" class="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold text-xs transition">
+                    Vymazať všetky dáta v aplikácii
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ========================================== -->
+    <!-- SPODNÁ NAVIGAČNÁ LIŠTA (BOTTOM TAB BAR)    -->
+    <!-- ========================================== -->
+    <nav class="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 bottom-nav-safe">
+        <div class="max-w-xl mx-auto flex items-center justify-around px-1 py-1.5">
+            <button onclick="switchTab('catches')" id="nav-catches" class="nav-tab flex-1 flex flex-col items-center justify-center py-1.5 text-emerald-400 transition">
+                <i data-lucide="list" class="w-5 h-5"></i>
+                <span class="text-[10px] font-semibold mt-1">Úlovky</span>
+            </button>
+
+            <button onclick="switchTab('stats')" id="nav-stats" class="nav-tab flex-1 flex flex-col items-center justify-center py-1.5 text-slate-400 hover:text-slate-200 transition">
+                <i data-lucide="trophy" class="w-5 h-5"></i>
+                <span class="text-[10px] font-semibold mt-1">Štatistiky</span>
+            </button>
+
+            <!-- Stredové výrazné tlačidlo Pridať -->
+            <div class="flex-1 flex justify-center -mt-5">
+                <button onclick="openAddNewCatch()" id="nav-add" class="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-slate-950 shadow-lg shadow-emerald-500/30 flex items-center justify-center active:scale-90 transition border-4 border-slate-950">
+                    <i data-lucide="plus" class="w-7 h-7 stroke-[2.8]"></i>
+                </button>
+            </div>
+
+            <button onclick="switchTab('tackle')" id="nav-tackle" class="nav-tab flex-1 flex flex-col items-center justify-center py-1.5 text-slate-400 hover:text-slate-200 transition">
+                <i data-lucide="briefcase" class="w-5 h-5"></i>
+                <span class="text-[10px] font-semibold mt-1">Krabička</span>
+            </button>
+
+            <button onclick="switchTab('backup')" id="nav-backup" class="nav-tab flex-1 flex flex-col items-center justify-center py-1.5 text-slate-400 hover:text-slate-200 transition">
+                <i data-lucide="database" class="w-5 h-5"></i>
+                <span class="text-[10px] font-semibold mt-1">Záloha</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- MODÁLNE OKNO: DETAIL ÚLOVKU + VODOZNAK     -->
+    <!-- ========================================== -->
+    <div id="catch-detail-modal" class="fixed inset-0 z-50 hidden bg-slate-950/90 backdrop-blur-sm overflow-y-auto">
+        <div class="min-h-screen flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div class="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl animate-slide-up">
+                <!-- Horná lišta modálu -->
+                <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-800">
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Detail úlovku</span>
+                    <button onclick="closeCatchDetailModal()" class="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Obsah detailu -->
+                <div id="catch-detail-content" class="p-5 space-y-4">
+                    <!-- Dynamicky generovaný obsah -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODÁLNE OKNO: RÝCHLE POČASIE PRI VODE      -->
+    <!-- ========================================== -->
+    <div id="weather-modal" class="fixed inset-0 z-50 hidden bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-5 space-y-4 animate-fade-in">
+            <div class="flex items-center justify-between">
+                <h3 class="font-bold text-white flex items-center gap-2">
+                    <i data-lucide="cloud-sun" class="w-5 h-5 text-amber-400"></i>
+                    Podmienky pri vode teraz
+                </h3>
+                <button onclick="closeWeatherModal()" class="p-1.5 rounded-xl bg-slate-800 text-slate-400">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div id="quick-weather-body" class="space-y-3 text-sm text-slate-300">
+                <p class="text-xs text-slate-400">Klikni nižšie pre zistenie aktuálneho tlaku, teploty a fázy mesiaca na tvojej polohe.</p>
+            </div>
+            <button onclick="loadQuickWeatherNow()" id="btn-quick-weather" class="w-full py-3 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs flex items-center justify-center gap-2">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i> Aktualizovať podmienky
+            </button>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- POTVRDZOVACÍ MODÁL (NAMIesto confirm())     -->
+    <!-- ========================================== -->
+    <div id="confirm-modal" class="fixed inset-0 z-50 hidden bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-5 space-y-4 animate-fade-in">
+            <h3 id="confirm-title" class="font-bold text-white text-base">Potvrdiť akciu</h3>
+            <p id="confirm-message" class="text-xs text-slate-300 leading-relaxed"></p>
+            <div class="grid grid-cols-2 gap-2.5 pt-1">
+                <button onclick="closeConfirmModal()" class="py-2.5 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs">Zrušiť</button>
+                <button id="confirm-action-btn" class="py-2.5 rounded-xl bg-rose-500 text-white font-bold text-xs">Potvrdiť</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Skrytý canvas pre kompresiu fotiek a generovanie vodoznaku -->
+    <canvas id="utility-canvas" class="hidden"></canvas>
+
+    <script>
+        // =========================================================================
+        // 1. INICIALIZÁCIA PWA MANIFESTU A GLOBÁLNEHO STAVU
+        // =========================================================================
+        (function setupManifest() {
+            const manifest = {
+                name: "Rybársky Denník PRO",
+                short_name: "Rybár PRO",
+                start_url: ".",
+                display: "standalone",
+                background_color: "#090d16",
+                theme_color: "#0f172a",
+                description: "Profesionálny rybársky denník pre evidenciu úlovkov, nástrah a štatistík.",
+                icons: [
+                    {
+                        src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230f172a'/%3E%3Cpath d='M390 256c-45-65-115-95-190-95-45 0-85 15-115 35l-45-35v190l45-35c30 20 70 35 115 35 75 0 145-30 190-95z' fill='%2310b981'/%3E%3Ccircle cx='330' cy='235' r='16' fill='%230f172a'/%3E%3C/svg%3E",
+                        sizes: "512x512",
+                        type: "image/svg+xml",
+                        purpose: "any maskable"
+                    }
+                ]
+            };
+            const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+            document.getElementById('pwa-manifest').setAttribute('href', URL.createObjectURL(blob));
+        })();
+
+        const DB_NAME = 'RybarskyDennikProDB';
+        const DB_VERSION = 1;
+        let db = null;
+
+        let state = {
+            catches: [],
+            lures: [],
+            activeTab: 'catches',
+            selectedSpeciesFilter: 'ALL',
+            currentPhotoDataUrl: null,
+            activeDetailCatchId: null
+        };
+
+        const DEFAULT_SPECIES = [
+            'Zubáč', 'Šťuka', 'Ostriež', 'Sumec', 'Boleň', 'Jalec', 'Kapor', 'Mrena', 'Pstruh'
+        ];
+
+        const DEFAULT_LURES = [
+            { id: 'lure_1', name: 'Salmo Hornet 4cm', type: 'Wobler', spec: 'Hot Perch • 3g' },
+            { id: 'lure_2', name: 'Rapala Countdown 5cm', type: 'Wobler', spec: 'Brown Trout • 5g' },
+            { id: 'lure_3', name: 'Keitech Easy Shiner 3"', type: 'Guma / Ripper', spec: 'Electric Shad • 5g jig' },
+            { id: 'lure_4', name: 'Mepps Aglia č. 2', type: 'Blyskáč / Rotačka', spec: 'Strieborná • 4.5g' },
+            { id: 'lure_5', name: 'Savage Gear Cannibal 8cm', type: 'Guma / Ripper', spec: 'Firetiger • 7g jig' }
+        ];
+
+        // =========================================================================
+        // 2. INDEXEDDB DATABÁZA (VYSOKÁ KAPACITA PRE FOTKY A DÁTA)
+        // =========================================================================
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+                request.onupgradeneeded = (event) => {
+                    const database = event.target.result;
+                    if (!database.objectStoreNames.contains('catches')) {
+                        database.createObjectStore('catches', { keyPath: 'id' });
+                    }
+                    if (!database.objectStoreNames.contains('lures')) {
+                        database.createObjectStore('lures', { keyPath: 'id' });
+                    }
+                };
+
+                request.onsuccess = (event) => {
+                    db = event.target.result;
+                    resolve(db);
+                };
+
+                request.onerror = (event) => {
+                    console.error('IndexedDB chyba:', event.target.error);
+                    reject(event.target.error);
+                };
+            });
+        }
+
+        function dbGetAll(storeName) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readonly');
+                const store = tx.objectStore(storeName);
+                const req = store.getAll();
+                req.onsuccess = () => resolve(req.result || []);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        function dbPut(storeName, item) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                const req = store.put(item);
+                req.onsuccess = () => resolve();
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        function dbDelete(storeName, id) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                const req = store.delete(id);
+                req.onsuccess = () => resolve();
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        function dbClearStore(storeName) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                const req = store.clear();
+                req.onsuccess = () => resolve();
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        // =========================================================================
+        // 3. NAČÍTANIE DÁT A UKÁŽKOVÉ DEMO ÚLOVKY
+        // =========================================================================
+        async function loadInitialData() {
+            await initDB();
+            let catches = await dbGetAll('catches');
+            let lures = await dbGetAll('lures');
+
+            // Ak je krabička prázdna, predvyplníme obľúbené nástrahy
+            if (lures.length === 0 && !localStorage.getItem('rybar_lures_initialized')) {
+                for (const lure of DEFAULT_LURES) {
+                    await dbPut('lures', lure);
+                }
+                lures = [...DEFAULT_LURES];
+                localStorage.setItem('rybar_lures_initialized', 'true');
+            }
+
+            // Ak aplikácia beží úplne prvýkrát, pridáme 4 realistické ukážkové úlovky
+            if (catches.length === 0 && !localStorage.getItem('rybar_demo_dismissed')) {
+                const demoCatches = createDemoCatches();
+                for (const item of demoCatches) {
+                    await dbPut('catches', item);
+                }
+                catches = demoCatches;
+            }
+
+            state.catches = catches;
+            state.lures = lures;
+
+            updateHeaderSubtitle();
+            renderSpeciesFilterBar();
+            renderCatches();
+            renderTackleBox();
+            updateBackupStats();
+            lucide.createIcons();
+        }
+
+        function createDemoCatches() {
+            const now = new Date();
+            const d1 = new Date(now.getTime() - 2 * 86400000);
+            const d2 = new Date(now.getTime() - 9 * 86400000);
+            const d3 = new Date(now.getTime() - 24 * 86400000);
+            const d4 = new Date(now.getTime() - 45 * 86400000);
+
+            return [
+                {
+                    id: 'demo_1',
+                    isDemo: true,
+                    species: 'Zubáč',
+                    length: 68,
+                    weight: 3.15,
+                    lure: 'Keitech Easy Shiner 3"',
+                    water: 'Hron č. 3',
+                    method: 'Kajak',
+                    datetime: new Date(d1.setHours(18, 40)).toISOString().slice(0, 16),
+                    temp: 11.5,
+                    pressure: 1016,
+                    wind: 9,
+                    lat: 48.2156,
+                    lng: 18.6071,
+                    moon: 'Dorastajúci mesiac',
+                    notes: 'Záber pri prepade na hrane koryta v 4m hĺbke.',
+                    released: true,
+                    photo: null
+                },
+                {
+                    id: 'demo_2',
+                    isDemo: true,
+                    species: 'Šťuka',
+                    length: 76,
+                    weight: 3.60,
+                    lure: 'Savage Gear Cannibal 8cm',
+                    water: 'VN Duchonka',
+                    method: 'Kajak',
+                    datetime: new Date(d2.setHours(8, 15)).toISOString().slice(0, 16),
+                    temp: 14.0,
+                    pressure: 1012,
+                    wind: 14,
+                    lat: 48.6689,
+                    lng: 18.0812,
+                    moon: 'Spln',
+                    notes: 'Krásny výpad popri potopených stromoch.',
+                    released: true,
+                    photo: null
+                },
+                {
+                    id: 'demo_3',
+                    isDemo: true,
+                    species: 'Ostriež',
+                    length: 34,
+                    weight: 0.65,
+                    lure: 'Salmo Hornet 4cm',
+                    water: 'Hron č. 3',
+                    method: 'Breh',
+                    datetime: new Date(d3.setHours(16, 20)).toISOString().slice(0, 16),
+                    temp: 16.5,
+                    pressure: 1021,
+                    wind: 6,
+                    lat: null,
+                    lng: null,
+                    moon: 'Cúvajúci mesiac',
+                    notes: 'Zobral hneď po dopade woblera pod previsnutú vŕbu.',
+                    released: true,
+                    photo: null
+                },
+                {
+                    id: 'demo_4',
+                    isDemo: true,
+                    species: 'Boleň',
+                    length: 62,
+                    weight: 2.30,
+                    lure: 'Rapala Countdown 5cm',
+                    water: 'Dunaj',
+                    method: 'Breh',
+                    datetime: new Date(d4.setHours(6, 30)).toISOString().slice(0, 16),
+                    temp: 18.2,
+                    pressure: 1018,
+                    wind: 11,
+                    lat: null,
+                    lng: null,
+                    moon: 'Nov',
+                    notes: 'Rýchle navíjanie tesne pod hladinou v prúde.',
+                    released: true,
+                    photo: null
+                }
+            ];
+        }
+
+        async function clearDemoData() {
+            const nonDemo = state.catches.filter(c => !c.isDemo);
+            for (const c of state.catches) {
+                if (c.isDemo) await dbDelete('catches', c.id);
+            }
+            state.catches = nonDemo;
+            localStorage.setItem('rybar_demo_dismissed', 'true');
+            updateHeaderSubtitle();
+            renderSpeciesFilterBar();
+            renderCatches();
+            updateBackupStats();
+            showToast('Ukážkové úlovky boli vymazané.', 'success');
+        }
+
+        // =========================================================================
+        // 4. NAVIGÁCIA MEDZI SEKCIAAMI
+        // =========================================================================
+        function switchTab(tabName) {
+            state.activeTab = tabName;
+            const sections = ['catches', 'add', 'stats', 'tackle', 'backup'];
+            sections.forEach(s => {
+                const el = document.getElementById(`view-${s}`);
+                if (el) el.classList.toggle('hidden', s !== tabName);
+            });
+
+            // Aktualizácia farieb ikon v spodnej lište
+            ['catches', 'stats', 'tackle', 'backup'].forEach(nav => {
+                const btn = document.getElementById(`nav-${nav}`);
+                if (!btn) return;
+                if (nav === tabName) {
+                    btn.classList.remove('text-slate-400');
+                    btn.classList.add('text-emerald-400');
+                } else {
+                    btn.classList.add('text-slate-400');
+                    btn.classList.remove('text-emerald-400');
+                }
+            });
+
+            if (tabName === 'stats') renderStatistics();
+            if (tabName === 'tackle') renderTackleBox();
+            if (tabName === 'backup') updateBackupStats();
+            if (tabName === 'catches') {
+                renderSpeciesFilterBar();
+                renderCatches();
+            }
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            lucide.createIcons();
+        }
+
+        function openAddNewCatch() {
+            resetForm();
+            switchTab('add');
+        }
+
+        // =========================================================================
+        // 5. FORMULÁR PRIDAŤ / UPRAVIŤ ÚLOVOK + FOTOGRAFIE + GPS & POČASIE
+        // =========================================================================
+        function populateFormHelpers() {
+            // Rýchle tlačidlá druhov rýb
+            const speciesContainer = document.getElementById('quick-species-buttons');
+            speciesContainer.innerHTML = DEFAULT_SPECIES.map(sp => `
+                <button type="button" onclick="selectSpeciesChip('${sp}')"
+                    class="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-emerald-500/20 border border-slate-800 hover:border-emerald-500/50 text-xs font-semibold text-slate-200 transition active:scale-95">
+                    ${sp}
+                </button>
+            `).join('');
+
+            // Rýchle tlačidlá nástrah z krabičky
+            const lureContainer = document.getElementById('quick-lure-buttons');
+            if (state.lures.length === 0) {
+                lureContainer.innerHTML = `<p class="text-xs text-slate-500">Krabička je zatiaľ prázdna.</p>`;
+            } else {
+                lureContainer.innerHTML = state.lures.map(l => `
+                    <button type="button" onclick="selectLureChip('${escapeHtml(l.name)}')"
+                        class="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-emerald-500/20 border border-slate-800 hover:border-emerald-500/50 text-xs font-medium text-slate-200 transition active:scale-95 flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                        ${escapeHtml(l.name)}
+                    </button>
+                `).join('');
+            }
+
+            // Posledné revíry
+            const uniqueWaters = [...new Set(state.catches.map(c => c.water).filter(Boolean))].slice(0, 5);
+            const waterContainer = document.getElementById('recent-waters-chips');
+            waterContainer.innerHTML = uniqueWaters.map(w => `
+                <button type="button" onclick="document.getElementById('water-input').value = '${escapeHtml(w)}'"
+                    class="px-2.5 py-1 rounded-lg bg-slate-800/80 text-slate-300 text-[11px] hover:bg-slate-700 transition">
+                    ${escapeHtml(w)}
+                </button>
+            `).join('');
+        }
+
+        function selectSpeciesChip(name) {
+            document.getElementById('species-input').value = name;
+        }
+
+        function selectLureChip(name) {
+            document.getElementById('lure-input').value = name;
+        }
+
+        function selectMethod(method) {
+            document.getElementById('method-input').value = method;
+            document.querySelectorAll('.method-btn').forEach(btn => {
+                if (btn.dataset.method === method) {
+                    btn.className = 'method-btn py-2.5 px-2 rounded-xl border text-xs font-semibold transition flex flex-col items-center gap-1 bg-emerald-500/20 border-emerald-500 text-emerald-300';
+                } else {
+                    btn.className = 'method-btn py-2.5 px-2 rounded-xl border text-xs font-semibold transition flex flex-col items-center gap-1 bg-slate-950 border-slate-800 text-slate-400';
+                }
+            });
+        }
+
+        function resetForm() {
+            document.getElementById('catch-form').reset();
+            document.getElementById('edit-catch-id').value = '';
+            document.getElementById('form-title').innerHTML = `<i data-lucide="plus-circle" class="w-5 h-5 text-emerald-400"></i> Nový úlovok`;
+            document.getElementById('submit-btn-text').textContent = 'Uložiť úlovok do denníka';
+
+            // Nastavenie aktuálneho dátumu a času
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            document.getElementById('datetime-input').value = now.toISOString().slice(0, 16);
+
+            // Fáza mesiaca
+            const moon = getMoonPhase(new Date());
+            document.getElementById('moon-phase-badge').textContent = `${moon.icon} ${moon.name}`;
+
+            selectMethod('Breh');
+            removeSelectedPhoto();
+            clearGps();
+            populateFormHelpers();
+            lucide.createIcons();
+        }
+
+        // Kompresia fotografie cez HTML5 Canvas (max 1200px, JPEG 0.8)
+        function handlePhotoUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.getElementById('utility-canvas');
+                    const ctx = canvas.getContext('2d');
+
+                    const MAX_WIDTH = 1200;
+                    const MAX_HEIGHT = 1200;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > MAX_WIDTH) {
+                            height = Math.round((height * MAX_WIDTH) / width);
+                            width = MAX_WIDTH;
+                        }
+                    } else {
+                        if (height > MAX_HEIGHT) {
+                            width = Math.round((width * MAX_HEIGHT) / height);
+                            height = MAX_HEIGHT;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                    state.currentPhotoDataUrl = compressedDataUrl;
+
+                    document.getElementById('photo-preview-img').src = compressedDataUrl;
+                    document.getElementById('photo-preview-wrapper').classList.remove('hidden');
+                    showToast('Fotka bola optimalizovaná a pripravená.', 'success');
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function removeSelectedPhoto() {
+            state.currentPhotoDataUrl = null;
+            document.getElementById('photo-input').value = '';
+            document.getElementById('photo-preview-img').src = '';
+            document.getElementById('photo-preview-wrapper').classList.add('hidden');
+        }
+
+        // GPS a Open-Meteo API pre počasie
+        function fetchGpsAndWeather() {
+            const btn = document.getElementById('btn-fetch-gps-weather');
+            const origHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> <span>Zisťujem GPS a počasie...</span>`;
+            lucide.createIcons();
+
+            if (!navigator.geolocation) {
+                showToast('Tvoj prehliadač nepodporuje GPS polohu.', 'error');
+                btn.disabled = false;
+                btn.innerHTML = origHtml;
+                lucide.createIcons();
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                const lat = Number(pos.coords.latitude.toFixed(5));
+                const lng = Number(pos.coords.longitude.toFixed(5));
+
+                document.getElementById('lat-input').value = lat;
+                document.getElementById('lng-input').value = lng;
+                document.getElementById('gps-text').textContent = `GPS: ${lat}, ${lng}`;
+                document.getElementById('gps-coords-display').classList.remove('hidden');
+
+                try {
+                    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,surface_pressure,wind_speed_10m,cloud_cover`;
+                    const resp = await fetch(url);
+                    const data = await resp.json();
+
+                    if (data && data.current) {
+                        document.getElementById('temp-input').value = data.current.temperature_2m;
+                        document.getElementById('pressure-input').value = Math.round(data.current.surface_pressure);
+                        document.getElementById('wind-input').value = Math.round(data.current.wind_speed_10m);
+                        document.getElementById('weather-desc-input').value = `Oblačnosť ${data.current.cloud_cover}%`;
+                        showToast('GPS poloha a počasie úspešne načítané!', 'success');
+                    }
+                } catch (err) {
+                    showToast('GPS uložené, ale počasie sa nepodarilo stiahnuť (offline režim).', 'warning');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = origHtml;
+                    lucide.createIcons();
+                }
+            }, (err) => {
+                showToast('Nepodarilo sa získať GPS polohu. Skontroluj povolenia.', 'error');
+                btn.disabled = false;
+                btn.innerHTML = origHtml;
+                lucide.createIcons();
+            }, { enableHighAccuracy: true, timeout: 10000 });
+        }
+
+        function clearGps() {
+            document.getElementById('lat-input').value = '';
+            document.getElementById('lng-input').value = '';
+            document.getElementById('gps-coords-display').classList.add('hidden');
+        }
+
+        // Uloženie úlovku + detekcia Osobného rekordu (PB)
+        async function saveCatch(event) {
+            event.preventDefault();
+
+            const editId = document.getElementById('edit-catch-id').value;
+            const species = document.getElementById('species-input').value.trim();
+            const length = parseFloat(document.getElementById('length-input').value);
+            const weightVal = document.getElementById('weight-input').value;
+            const weight = weightVal ? parseFloat(weightVal) : null;
+            const lure = document.getElementById('lure-input').value.trim();
+            const water = document.getElementById('water-input').value.trim();
+            const method = document.getElementById('method-input').value;
+            const datetime = document.getElementById('datetime-input').value;
+
+            const tempVal = document.getElementById('temp-input').value;
+            const pressureVal = document.getElementById('pressure-input').value;
+            const windVal = document.getElementById('wind-input').value;
+            const latVal = document.getElementById('lat-input').value;
+            const lngVal = document.getElementById('lng-input').value;
+
+            const moon = getMoonPhase(new Date(datetime || Date.now()));
+
+            // Kontrola, či ide o nový osobný rekord (PB) pre daný druh
+            const existingSameSpecies = state.catches.filter(c =>
+                c.species.toLowerCase() === species.toLowerCase() && c.id !== editId
+            );
+            const prevMaxLength = existingSameSpecies.reduce((max, c) => Math.max(max, c.length || 0), 0);
+            const isNewPB = length > prevMaxLength;
+
+            const catchObj = {
+                id: editId || 'catch_' + Date.now(),
+                isDemo: false,
+                species,
+                length,
+                weight,
+                lure: lure || 'Neuvedená',
+                water,
+                method,
+                datetime,
+                temp: tempVal !== '' ? parseFloat(tempVal) : null,
+                pressure: pressureVal !== '' ? parseInt(pressureVal, 10) : null,
+                wind: windVal !== '' ? parseInt(windVal, 10) : null,
+                lat: latVal !== '' ? parseFloat(latVal) : null,
+                lng: lngVal !== '' ? parseFloat(lngVal) : null,
+                weatherDesc: document.getElementById('weather-desc-input').value || '',
+                moon: moon.name,
+                notes: document.getElementById('notes-input').value.trim(),
+                released: document.getElementById('released-input').checked,
+                photo: state.currentPhotoDataUrl
+            };
+
+            await dbPut('catches', catchObj);
+
+            if (editId) {
+                const idx = state.catches.findIndex(c => c.id === editId);
+                if (idx !== -1) state.catches[idx] = catchObj;
+                showToast('Úlovok bol aktualizovaný.', 'success');
+            } else {
+                state.catches.unshift(catchObj);
+                if (isNewPB) {
+                    showToast(`🏆 NOVÝ OSOBNÝ REKORD (PB)! ${species} ${length} cm!`, 'pb');
+                } else {
+                    showToast(`Úlovok (${species} ${length} cm) uložený!`, 'success');
+                }
+            }
+
+            updateHeaderSubtitle();
+            switchTab('catches');
+        }
+
+        function editCatch(id) {
+            const c = state.catches.find(item => item.id === id);
+            if (!c) return;
+
+            closeCatchDetailModal();
+            switchTab('add');
+
+            document.getElementById('edit-catch-id').value = c.id;
+            document.getElementById('form-title').innerHTML = `<i data-lucide="edit-3" class="w-5 h-5 text-amber-400"></i> Upraviť úlovok`;
+            document.getElementById('submit-btn-text').textContent = 'Uložiť zmeny';
+
+            document.getElementById('species-input').value = c.species;
+            document.getElementById('length-input').value = c.length;
+            document.getElementById('weight-input').value = c.weight || '';
+            document.getElementById('lure-input').value = c.lure === 'Neuvedená' ? '' : c.lure;
+            document.getElementById('water-input').value = c.water;
+            selectMethod(c.method || 'Breh');
+            document.getElementById('datetime-input').value = c.datetime;
+
+            document.getElementById('temp-input').value = c.temp ?? '';
+            document.getElementById('pressure-input').value = c.pressure ?? '';
+            document.getElementById('wind-input').value = c.wind ?? '';
+            document.getElementById('notes-input').value = c.notes || '';
+            document.getElementById('released-input').checked = c.released !== false;
+
+            if (c.lat && c.lng) {
+                document.getElementById('lat-input').value = c.lat;
+                document.getElementById('lng-input').value = c.lng;
+                document.getElementById('gps-text').textContent = `GPS: ${c.lat}, ${c.lng}`;
+                document.getElementById('gps-coords-display').classList.remove('hidden');
+            } else {
+                clearGps();
+            }
+
+            if (c.photo) {
+                state.currentPhotoDataUrl = c.photo;
+                document.getElementById('photo-preview-img').src = c.photo;
+                document.getElementById('photo-preview-wrapper').classList.remove('hidden');
+            } else {
+                removeSelectedPhoto();
+            }
+
+            lucide.createIcons();
+        }
+
+        // =========================================================================
+        // 6. VYKRESLENIE ZOZNAMU ÚLOVKOV A DETAILNÉHO MODÁLU
+        // =========================================================================
+        function getPersonalBestsMap() {
+            const pbMap = {};
+            state.catches.forEach(c => {
+                const key = c.species.toLowerCase();
+                if (!pbMap[key] || c.length > pbMap[key].length) {
+                    pbMap[key] = c;
+                }
+            });
+            return pbMap;
+        }
+
+        function renderSpeciesFilterBar() {
+            const bar = document.getElementById('species-filter-bar');
+            const speciesSet = new Set(state.catches.map(c => c.species));
+            const allFilters = ['ALL', ...Array.from(speciesSet)];
+
+            bar.innerHTML = allFilters.map(sp => {
+                const isSelected = state.selectedSpeciesFilter === sp;
+                const label = sp === 'ALL' ? `Všetky (${state.catches.length})` : sp;
+                return `
+                    <button onclick="setSpeciesFilter('${escapeHtml(sp)}')"
+                        class="px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition ${
+                            isSelected
+                                ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                                : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-slate-700'
+                        }">
+                        ${escapeHtml(label)}
+                    </button>
+                `;
+            }).join('');
+        }
+
+        function setSpeciesFilter(sp) {
+            state.selectedSpeciesFilter = sp;
+            renderSpeciesFilterBar();
+            renderCatches();
+        }
+
+        function renderCatches() {
+            const listEl = document.getElementById('catches-list');
+            const search = document.getElementById('search-input').value.toLowerCase().trim();
+            const methodFilter = document.getElementById('method-filter').value;
+            const sortBy = document.getElementById('sort-select').value;
+
+            // Zobrazenie demo bannera, ak existujú ukážkové dáta
+            const hasDemo = state.catches.some(c => c.isDemo);
+            document.getElementById('demo-banner').classList.toggle('hidden', !hasDemo);
+
+            const pbMap = getPersonalBestsMap();
+
+            let filtered = state.catches.filter(c => {
+                if (state.selectedSpeciesFilter !== 'ALL' && c.species !== state.selectedSpeciesFilter) return false;
+                if (methodFilter !== 'ALL' && c.method !== methodFilter) return false;
+                if (search) {
+                    const hay = `${c.species} ${c.water} ${c.lure} ${c.notes || ''} ${c.method}`.toLowerCase();
+                    if (!hay.includes(search)) return false;
+                }
+                return true;
+            });
+
+            filtered.sort((a, b) => {
+                if (sortBy === 'length-desc') return (b.length || 0) - (a.length || 0);
+                if (sortBy === 'weight-desc') return (b.weight || 0) - (a.weight || 0);
+                return new Date(b.datetime) - new Date(a.datetime);
+            });
+
+            if (filtered.length === 0) {
+                listEl.innerHTML = `
+                    <div class="bg-slate-900/60 border border-slate-800 rounded-3xl p-8 text-center space-y-3">
+                        <div class="w-12 h-12 rounded-2xl bg-slate-800 mx-auto flex items-center justify-center">
+                            <i data-lucide="fish-off" class="w-6 h-6 text-slate-500"></i>
+                        </div>
+                        <h3 class="text-sm font-bold text-slate-200">Žiadne úlovky na zobrazenie</h3>
+                        <p class="text-xs text-slate-400">Pridaj svoj prvý úlovok stlačením zeleného tlačidla + v strede dole.</p>
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            listEl.innerHTML = filtered.map(c => {
+                const isPB = pbMap[c.species.toLowerCase()]?.id === c.id;
+                const formattedDate = formatDateSk(c.datetime);
+
+                return `
+                    <article onclick="openCatchDetail('${c.id}')"
+                        class="bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-2xl overflow-hidden transition active:scale-[0.99] cursor-pointer shadow-sm">
+                        <div class="flex">
+                            ${c.photo ? `
+                                <div class="w-28 sm:w-32 shrink-0 bg-slate-950 relative">
+                                    <img src="${c.photo}" alt="${escapeHtml(c.species)}" class="w-full h-full object-cover min-h-[116px]">
+                                    ${isPB ? `<span class="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-amber-500 text-slate-950 font-extrabold text-[9px] tracking-wider shadow">PB REKORD</span>` : ''}
+                                </div>
+                            ` : `
+                                <div class="w-20 shrink-0 bg-slate-950/70 border-r border-slate-800/80 flex flex-col items-center justify-center p-2 text-center relative">
+                                    <i data-lucide="fish" class="w-6 h-6 text-emerald-500/60 mb-1"></i>
+                                    <span class="text-[10px] font-semibold text-slate-500">${escapeHtml(c.method)}</span>
+                                    ${isPB ? `<span class="mt-1 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40 font-extrabold text-[9px]">PB</span>` : ''}
+                                </div>
+                            `}
+
+                            <div class="flex-1 p-3.5 flex flex-col justify-between min-w-0">
+                                <div>
+                                    <div class="flex items-start justify-between gap-2">
+                                        <h3 class="font-bold text-base text-white truncate flex items-center gap-1.5">
+                                            ${escapeHtml(c.species)}
+                                            ${c.isDemo ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-normal">DEMO</span>` : ''}
+                                        </h3>
+                                        <div class="text-right shrink-0">
+                                            <span class="text-base font-extrabold text-emerald-400">${c.length} cm</span>
+                                            ${c.weight ? `<span class="text-xs font-semibold text-slate-400 block">${c.weight} kg</span>` : ''}
+                                        </div>
+                                    </div>
+
+                                    <p class="text-xs text-slate-300 mt-1 flex items-center gap-1.5 truncate">
+                                        <i data-lucide="anchor" class="w-3.5 h-3.5 text-emerald-500 shrink-0"></i>
+                                        <span class="truncate">${escapeHtml(c.lure)}</span>
+                                    </p>
+                                </div>
+
+                                <div class="flex items-center justify-between text-[11px] text-slate-400 mt-2.5 pt-2 border-t border-slate-800/80">
+                                    <span class="truncate flex items-center gap-1">
+                                        <i data-lucide="map-pin" class="w-3 h-3 text-slate-500"></i>
+                                        ${escapeHtml(c.water)} • ${escapeHtml(c.method)}
+                                    </span>
+                                    <span class="shrink-0 ml-2">${formattedDate}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+                `;
+            }).join('');
+
+            lucide.createIcons();
+        }
+
+        function openCatchDetail(id) {
+            const c = state.catches.find(item => item.id === id);
+            if (!c) return;
+            state.activeDetailCatchId = id;
+
+            const pbMap = getPersonalBestsMap();
+            const isPB = pbMap[c.species.toLowerCase()]?.id === c.id;
+            const modalContent = document.getElementById('catch-detail-content');
+
+            modalContent.innerHTML = `
+                ${c.photo ? `
+                    <div class="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-950">
+                        <img src="${c.photo}" alt="${escapeHtml(c.species)}" class="w-full max-h-80 object-cover">
+                        <!-- Štýlový informačný štítok priamo na fotke -->
+                        <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent p-3.5 pt-8 flex items-end justify-between">
+                            <div>
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block">Rybársky Denník PRO</span>
+                                <span class="text-base font-extrabold text-white">${escapeHtml(c.species)} • ${c.length} cm ${c.weight ? `(${c.weight} kg)` : ''}</span>
+                                <span class="text-[11px] text-slate-300 block">${escapeHtml(c.water)} • ${formatDateSk(c.datetime)}</span>
+                            </div>
+                            <button onclick="downloadWatermarkedPhoto('${c.id}')" class="px-3 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-lg active:scale-95 transition">
+                                <i data-lucide="download" class="w-3.5 h-3.5"></i> Uložiť s štítkom
+                            </button>
+                        </div>
+                    </div>
+                ` : ''}
+
+                <div class="flex items-start justify-between">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h2 class="text-2xl font-extrabold text-white">${escapeHtml(c.species)}</h2>
+                            ${isPB ? `<span class="px-2 py-0.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-400 text-xs font-extrabold">🏆 OSOBNÝ REKORD</span>` : ''}
+                        </div>
+                        <p class="text-xs text-slate-400 mt-0.5">${formatDateSk(c.datetime, true)}</p>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-2xl font-extrabold text-emerald-400">${c.length} cm</div>
+                        ${c.weight ? `<div class="text-sm font-bold text-slate-300">${c.weight} kg</div>` : ''}
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5 text-xs">
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                        <span class="text-slate-500 block">Nástraha</span>
+                        <span class="font-bold text-white mt-0.5 block">${escapeHtml(c.lure)}</span>
+                    </div>
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                        <span class="text-slate-500 block">Revír & Spôsob</span>
+                        <span class="font-bold text-white mt-0.5 block">${escapeHtml(c.water)} (${escapeHtml(c.method)})</span>
+                    </div>
+                </div>
+
+                ${(c.temp !== null || c.pressure !== null || c.wind !== null || c.moon) ? `
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2">
+                        <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">Podmienky pri zábere</span>
+                        <div class="flex flex-wrap gap-3 text-xs text-slate-200">
+                            ${c.temp !== null ? `<span>🌡️ <strong>${c.temp} °C</strong></span>` : ''}
+                            ${c.pressure !== null ? `<span>⏱️ <strong>${c.pressure} hPa</strong></span>` : ''}
+                            ${c.wind !== null ? `<span>💨 <strong>${c.wind} km/h</strong></span>` : ''}
+                            ${c.moon ? `<span>🌙 <strong>${escapeHtml(c.moon)}</strong></span>` : ''}
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${(c.lat && c.lng) ? `
+                    <a href="https://www.google.com/maps?q=${c.lat},${c.lng}" target="_blank" rel="noopener noreferrer"
+                        class="flex items-center justify-between bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl p-3 text-xs text-emerald-300 font-semibold transition">
+                        <span class="flex items-center gap-2">
+                            <i data-lucide="map-pin" class="w-4 h-4 text-emerald-400"></i>
+                            Otvoriť presné miesto v Google Mapách (${c.lat}, ${c.lng})
+                        </span>
+                        <i data-lucide="external-link" class="w-4 h-4"></i>
+                    </a>
+                ` : ''}
+
+                ${c.notes ? `
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                        <span class="text-[11px] text-slate-500 block mb-1">Poznámka</span>
+                        <p class="text-xs text-slate-200 leading-relaxed">${escapeHtml(c.notes)}</p>
+                    </div>
+                ` : ''}
+
+                <div class="flex items-center justify-between text-xs text-slate-400 pt-1">
+                    <span>${c.released !== false ? '✅ Ryba bola pustená späť do vody' : '🎣 Úlovok privlastnený'}</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-800">
+                    <button onclick="editCatch('${c.id}')" class="py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5">
+                        <i data-lucide="edit-3" class="w-4 h-4"></i> Upraviť
+                    </button>
+                    <button onclick="askDeleteCatch('${c.id}')" class="py-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold text-xs flex items-center justify-center gap-1.5">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i> Zmazať
+                    </button>
+                </div>
+            `;
+
+            document.getElementById('catch-detail-modal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeCatchDetailModal() {
+            document.getElementById('catch-detail-modal').classList.add('hidden');
+        }
+
+        function askDeleteCatch(id) {
+            openConfirmModal(
+                'Zmazať úlovok?',
+                'Naozaj chceš natrvalo vymazať tento úlovok vrátane fotografie?',
+                async () => {
+                    await dbDelete('catches', id);
+                    state.catches = state.catches.filter(c => c.id !== id);
+                    closeCatchDetailModal();
+                    updateHeaderSubtitle();
+                    renderSpeciesFilterBar();
+                    renderCatches();
+                    showToast('Úlovok bol vymazaný.', 'success');
+                }
+            );
+        }
+
+        // Vygenerovanie a stiahnutie fotografie s vodoznakom
+        function downloadWatermarkedPhoto(id) {
+            const c = state.catches.find(item => item.id === id);
+            if (!c || !c.photo) return;
+
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.getElementById('utility-canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = img.width;
+                canvas.height = img.height;
+
+                ctx.drawImage(img, 0, 0);
+
+                // Tmavý spodný prechod pre vodoznak
+                const barHeight = Math.max(90, Math.round(img.height * 0.16));
+                const grad = ctx.createLinearGradient(0, img.height - barHeight * 1.4, 0, img.height);
+                grad.addColorStop(0, 'rgba(9, 13, 22, 0)');
+                grad.addColorStop(1, 'rgba(9, 13, 22, 0.92)');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, img.height - barHeight * 1.4, img.width, barHeight * 1.4);
+
+                const pad = Math.round(img.width * 0.035);
+                const mainFontSize = Math.max(22, Math.round(img.width * 0.04));
+                const subFontSize = Math.max(14, Math.round(img.width * 0.024));
+
+                ctx.fillStyle = '#10b981';
+                ctx.font = `800 ${subFontSize}px Inter, sans-serif`;
+                ctx.fillText('RYBÁRSKY DENNÍK PRO', pad, img.height - pad - mainFontSize - subFontSize * 0.6);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = `800 ${mainFontSize}px Inter, sans-serif`;
+                const titleText = `${c.species} • ${c.length} cm ${c.weight ? `(${c.weight} kg)` : ''}`;
+                ctx.fillText(titleText, pad, img.height - pad - subFontSize * 1.3);
+
+                ctx.fillStyle = '#cbd5e1';
+                ctx.font = `500 ${subFontSize}px Inter, sans-serif`;
+                const metaText = `${c.lure} • ${c.water} • ${formatDateSk(c.datetime)}`;
+                ctx.fillText(metaText, pad, img.height - pad);
+
+                const link = document.createElement('a');
+                link.download = `ulovok_${c.species.toLowerCase()}_${c.length}cm.jpg`;
+                link.href = canvas.toDataURL('image/jpeg', 0.92);
+                link.click();
+                showToast('Fotka s informačným štítkom bola stiahnutá.', 'success');
+            };
+            img.src = c.photo;
+        }
+
+        // =========================================================================
+        // 7. ŠTATISTIKY, SIEŇ SLÁVY A GRAFY
+        // =========================================================================
+        function renderStatistics() {
+            const catches = state.catches;
+            const totalCount = catches.length;
+            const totalWeight = catches.reduce((sum, c) => sum + (c.weight || 0), 0);
+            const longestCatch = catches.reduce((best, c) => (c.length > (best?.length || 0) ? c : best), null);
+            const heaviestCatch = catches.reduce((best, c) => ((c.weight || 0) > (best?.weight || 0) ? c : best), null);
+
+            // 1. KPI karty
+            document.getElementById('stats-kpi-grid').innerHTML = `
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+                    <span class="text-xs text-slate-400">Celkom úlovkov</span>
+                    <div class="text-2xl font-extrabold text-white mt-1">${totalCount} <span class="text-xs font-normal text-slate-500">ks</span></div>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+                    <span class="text-xs text-slate-400">Celková váha</span>
+                    <div class="text-2xl font-extrabold text-emerald-400 mt-1">${totalWeight.toFixed(2)} <span class="text-xs font-normal text-slate-500">kg</span></div>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+                    <span class="text-xs text-slate-400">Najdlhšia ryba</span>
+                    <div class="text-xl font-extrabold text-amber-400 mt-1">${longestCatch ? `${longestCatch.length} cm` : '--'}</div>
+                    <span class="text-[11px] text-slate-400 truncate block">${longestCatch ? longestCatch.species : ''}</span>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+                    <span class="text-xs text-slate-400">Najťažšia ryba</span>
+                    <div class="text-xl font-extrabold text-sky-400 mt-1">${heaviestCatch ? `${heaviestCatch.weight} kg` : '--'}</div>
+                    <span class="text-[11px] text-slate-400 truncate block">${heaviestCatch ? heaviestCatch.species : ''}</span>
+                </div>
+            `;
+
+            // 2. Sieň slávy (Osobné rekordy PB pre každý druh ryby)
+            const pbMap = getPersonalBestsMap();
+            const pbList = Object.values(pbMap).sort((a, b) => b.length - a.length);
+            const hofEl = document.getElementById('pb-hall-of-fame');
+
+            if (pbList.length === 0) {
+                hofEl.innerHTML = `<p class="text-xs text-slate-500">Zatiaľ nemáš zapísané žiadne úlovky.</p>`;
+            } else {
+                hofEl.innerHTML = pbList.map((pb, idx) => `
+                    <div onclick="openCatchDetail('${pb.id}')" class="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800/80 hover:border-amber-500/40 cursor-pointer transition">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-7 h-7 rounded-lg ${idx === 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-amber-400'} font-extrabold text-xs flex items-center justify-center shrink-0">
+                                #${idx + 1}
+                            </div>
+                            <div class="min-w-0">
+                                <span class="font-bold text-sm text-white block truncate">${escapeHtml(pb.species)}</span>
+                                <span class="text-[11px] text-slate-400 block truncate">${escapeHtml(pb.lure)} • ${escapeHtml(pb.water)}</span>
+                            </div>
+                        </div>
+                        <div class="text-right shrink-0 ml-2">
+                            <span class="font-extrabold text-sm text-amber-400 block">${pb.length} cm</span>
+                            ${pb.weight ? `<span class="text-[11px] text-slate-400">${pb.weight} kg</span>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // 3. Graf Top nástrah
+            const lureCounts = {};
+            catches.forEach(c => {
+                if (c.lure && c.lure !== 'Neuvedená') {
+                    lureCounts[c.lure] = (lureCounts[c.lure] || 0) + 1;
+                }
+            });
+            const sortedLures = Object.entries(lureCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+            const maxLureCount = sortedLures[0]?.[1] || 1;
+
+            document.getElementById('chart-lures').innerHTML = sortedLures.length === 0
+                ? `<p class="text-xs text-slate-500">Nedostatok dát o nástrahách.</p>`
+                : sortedLures.map(([name, count]) => {
+                    const pct = Math.round((count / maxLureCount) * 100);
+                    return `
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-200 font-medium truncate pr-2">${escapeHtml(name)}</span>
+                                <span class="text-emerald-400 font-bold shrink-0">${count} ks</span>
+                            </div>
+                            <div class="w-full h-2 bg-slate-950 rounded-full overflow-hidden">
+                                <div class="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full" style="width: ${pct}%"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            // 4. Graf podľa mesiacov
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Máj', 'Jún', 'Júl', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
+            const monthCounts = new Array(12).fill(0);
+            catches.forEach(c => {
+                if (c.datetime) {
+                    const m = new Date(c.datetime).getMonth();
+                    if (!isNaN(m)) monthCounts[m]++;
+                }
+            });
+            const maxMonth = Math.max(...monthCounts, 1);
+
+            document.getElementById('chart-months').innerHTML = monthCounts.map((cnt, idx) => {
+                const heightPct = cnt === 0 ? 4 : Math.max(14, Math.round((cnt / maxMonth) * 100));
+                return `
+                    <div class="flex-1 flex flex-col items-center h-full justify-end gap-1">
+                        <span class="text-[10px] font-bold ${cnt > 0 ? 'text-emerald-400' : 'text-slate-600'}">${cnt > 0 ? cnt : ''}</span>
+                        <div class="w-full rounded-t-md ${cnt > 0 ? 'bg-emerald-500' : 'bg-slate-800'}" style="height: ${heightPct}%"></div>
+                        <span class="text-[9px] text-slate-400">${monthNames[idx]}</span>
+                    </div>
+                `;
+            }).join('');
+
+            // 5. Denná doba záberov
+            const timeSlots = { 'Ráno (5-10h)': 0, 'Deň (10-16h)': 0, 'Večer (16-21h)': 0, 'Noc (21-5h)': 0 };
+            catches.forEach(c => {
+                if (!c.datetime) return;
+                const h = new Date(c.datetime).getHours();
+                if (h >= 5 && h < 10) timeSlots['Ráno (5-10h)']++;
+                else if (h >= 10 && h < 16) timeSlots['Deň (10-16h)']++;
+                else if (h >= 16 && h < 21) timeSlots['Večer (16-21h)']++;
+                else timeSlots['Noc (21-5h)']++;
+            });
+            renderMiniBarList('chart-timeofday', timeSlots, 'bg-amber-400');
+
+            // 6. Atmosférický tlak
+            const pressureSlots = { 'Nízky (<1010)': 0, 'Normálny (1010-1020)': 0, 'Vysoký (>1020)': 0 };
+            catches.forEach(c => {
+                if (!c.pressure) return;
+                if (c.pressure < 1010) pressureSlots['Nízky (<1010)']++;
+                else if (c.pressure <= 1020) pressureSlots['Normálny (1010-1020)']++;
+                else pressureSlots['Vysoký (>1020)']++;
+            });
+            renderMiniBarList('chart-pressure', pressureSlots, 'bg-sky-400');
+        }
+
+        function renderMiniBarList(elementId, dataObj, barColorClass) {
+            const el = document.getElementById(elementId);
+            const maxVal = Math.max(...Object.values(dataObj), 1);
+            el.innerHTML = Object.entries(dataObj).map(([label, val]) => {
+                const pct = Math.round((val / maxVal) * 100);
+                return `
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-[11px]">
+                            <span class="text-slate-300">${label}</span>
+                            <span class="font-bold text-white">${val}</span>
+                        </div>
+                        <div class="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
+                            <div class="h-full ${barColorClass} rounded-full" style="width: ${pct}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // =========================================================================
+        // 8. KRABIČKA NÁSTRAH (TACKLE BOX)
+        // =========================================================================
+        function renderTackleBox() {
+            const listEl = document.getElementById('tackle-list');
+            if (state.lures.length === 0) {
+                listEl.innerHTML = `<p class="text-xs text-slate-400 text-center py-6">Zatiaľ nemáš uložené žiadne nástrahy.</p>`;
+                return;
+            }
+
+            listEl.innerHTML = state.lures.map(l => {
+                const catchCount = state.catches.filter(c => c.lure.toLowerCase() === l.name.toLowerCase()).length;
+                return `
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between gap-3">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-sm text-white truncate">${escapeHtml(l.name)}</span>
+                                <span class="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-emerald-400 font-semibold shrink-0">${escapeHtml(l.type)}</span>
+                            </div>
+                            <div class="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
+                                <span>${escapeHtml(l.spec || 'Bez popisu')}</span>
+                                <span>•</span>
+                                <span class="text-slate-300 font-medium">${catchCount} úlovkov</span>
+                            </div>
+                        </div>
+                        <button onclick="deleteLure('${l.id}')" class="p-2 rounded-xl bg-slate-950 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-800 transition shrink-0">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+
+            lucide.createIcons();
+        }
+
+        async function addNewLure(event) {
+            event.preventDefault();
+            const name = document.getElementById('new-lure-name').value.trim();
+            const type = document.getElementById('new-lure-type').value;
+            const spec = document.getElementById('new-lure-spec').value.trim();
+
+            if (!name) return;
+
+            const newLure = {
+                id: 'lure_' + Date.now(),
+                name,
+                type,
+                spec
+            };
+
+            await dbPut('lures', newLure);
+            state.lures.unshift(newLure);
+
+            document.getElementById('new-lure-name').value = '';
+            document.getElementById('new-lure-spec').value = '';
+            renderTackleBox();
+            showToast(`Nástraha "${name}" pridaná do krabičky.`, 'success');
+        }
+
+        async function deleteLure(id) {
+            await dbDelete('lures', id);
+            state.lures = state.lures.filter(l => l.id !== id);
+            renderTackleBox();
+            showToast('Nástraha odstránená.', 'success');
+        }
+
+        // =========================================================================
+        // 9. ZÁLOHA A EXPORT (CSV EXCEL + JSON VRÁTANE FOTIEK)
+        // =========================================================================
+        function updateBackupStats() {
+            document.getElementById('storage-stats-text').textContent = `${state.catches.length} úlovkov • ${state.lures.length} nástrah`;
+        }
+
+        function exportCSV() {
+            if (state.catches.length === 0) {
+                showToast('Nemáš žiadne úlovky na export.', 'error');
+                return;
+            }
+
+            const headers = [
+                'Dátum a čas', 'Druh ryby', 'Dĺžka (cm)', 'Váha (kg)', 'Nástraha',
+                'Revír', 'Spôsob lovu', 'Teplota (°C)', 'Tlak (hPa)', 'Vietor (km/h)',
+                'Fáza mesiaca', 'GPS Šírka', 'GPS Dĺžka', 'Chyť a pusť', 'Poznámka'
+            ];
+
+            const rows = state.catches.map(c => [
+                c.datetime || '',
+                c.species || '',
+                c.length ?? '',
+                c.weight ?? '',
+                c.lure || '',
+                c.water || '',
+                c.method || '',
+                c.temp ?? '',
+                c.pressure ?? '',
+                c.wind ?? '',
+                c.moon || '',
+                c.lat ?? '',
+                c.lng ?? '',
+                c.released !== false ? 'Áno' : 'Nie',
+                (c.notes || '').replace(/"/g, '""')
+            ]);
+
+            // UTF-8 BOM pre správne zobrazenie slovenskej diakritiky v Exceli + bodkočiarka ako oddeľovač
+            let csvContent = '\uFEFF' + headers.join(';') + '\n';
+            rows.forEach(row => {
+                csvContent += row.map(val => `"${val}"`).join(';') + '\n';
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `rybarsky_dennik_${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('Excel tabuľka (CSV) bola stiahnutá.', 'success');
+        }
+
+        function exportJSON() {
+            const backupPayload = {
+                app: 'RybarskyDennikPRO',
+                version: 1,
+                exportedAt: new Date().toISOString(),
+                catches: state.catches,
+                lures: state.lures
+            };
+
+            const blob = new Blob([JSON.stringify(backupPayload)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `rybarsky_dennik_zaloha_${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('Kompletná JSON záloha (vrátane fotiek) bola stiahnutá.', 'success');
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (!data || !Array.isArray(data.catches)) {
+                        throw new Error('Neplatný formát záložného súboru.');
+                    }
+
+                    for (const c of data.catches) {
+                        await dbPut('catches', c);
+                    }
+                    if (Array.isArray(data.lures)) {
+                        for (const l of data.lures) {
+                            await dbPut('lures', l);
+                        }
+                    }
+
+                    state.catches = await dbGetAll('catches');
+                    state.lures = await dbGetAll('lures');
+
+                    updateHeaderSubtitle();
+                    updateBackupStats();
+                    showToast(`Obnovených ${data.catches.length} úlovkov zo zálohy!`, 'success');
+                    switchTab('catches');
+                } catch (err) {
+                    showToast('Chyba pri obnove zálohy: nesprávny súbor.', 'error');
+                } finally {
+                    event.target.value = '';
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function confirmClearAllData() {
+            openConfirmModal(
+                'Vymazať celú databázu?',
+                'Týmto natrvalo odstrániš všetky úlovky, fotky aj vlastné nástrahy z tohto zariadenia. Odporúčame najprv stiahnuť JSON zálohu.',
+                async () => {
+                    await dbClearStore('catches');
+                    await dbClearStore('lures');
+                    localStorage.setItem('rybar_demo_dismissed', 'true');
+                    localStorage.setItem('rybar_lures_initialized', 'true');
+                    state.catches = [];
+                    state.lures = [];
+                    updateHeaderSubtitle();
+                    updateBackupStats();
+                    showToast('Všetky dáta boli vymazané.', 'success');
+                }
+            );
+        }
+
+        // =========================================================================
+        // 10. POMOCNÉ FUNKCIE (FÁZA MESIACA, RÝCHLE POČASIE, TOASTY, FORMÁTOVANIE)
+        // =========================================================================
+        function getMoonPhase(date) {
+            const synodicMonth = 29.53058867;
+            const knownNewMoon = new Date('2024-01-11T11:57:00Z').getTime();
+            const daysSince = (date.getTime() - knownNewMoon) / 86400000;
+            const phase = ((daysSince % synodicMonth) + synodicMonth) % synodicMonth;
+
+            if (phase < 1.85 || phase >= 27.68) return { name: 'Nov', icon: '🌑' };
+            if (phase < 5.53) return { name: 'Dorastajúci kosáčik', icon: '🌒' };
+            if (phase < 9.22) return { name: 'Prvá štvrť', icon: '🌓' };
+            if (phase < 12.91) return { name: 'Dorastajúci mesiac', icon: '🌔' };
+            if (phase < 16.61) return { name: 'Spln', icon: '🌕' };
+            if (phase < 20.30) return { name: 'Cúvajúci mesiac', icon: '🌖' };
+            if (phase < 23.99) return { name: 'Posledná štvrť', icon: '🌗' };
+            return { name: 'Ubúdajúci kosáčik', icon: '🌘' };
+        }
+
+        function openWeatherQuickModal() {
+            document.getElementById('weather-modal').classList.remove('hidden');
+            const moon = getMoonPhase(new Date());
+            document.getElementById('quick-weather-body').innerHTML = `
+                <div class="bg-slate-950 border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between">
+                    <span class="text-xs text-slate-400">Dnešná fáza mesiaca</span>
+                    <span class="text-sm font-bold text-white">${moon.icon} ${moon.name}</span>
+                </div>
+                <p class="text-xs text-slate-400">Stlač tlačidlo nižšie pre stiahnutie aktuálnej teploty, tlaku a vetra podľa tvojej GPS.</p>
+            `;
+        }
+
+        function closeWeatherModal() {
+            document.getElementById('weather-modal').classList.add('hidden');
+        }
+
+        function loadQuickWeatherNow() {
+            const btn = document.getElementById('btn-quick-weather');
+            btn.disabled = true;
+            btn.textContent = 'Načítavam GPS a počasie...';
+
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                try {
+                    const { latitude, longitude } = pos.coords;
+                    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,surface_pressure,wind_speed_10m,cloud_cover`;
+                    const resp = await fetch(url);
+                    const data = await resp.json();
+                    const cur = data.current;
+                    const moon = getMoonPhase(new Date());
+
+                    document.getElementById('quick-weather-body').innerHTML = `
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                                <span class="text-[11px] text-slate-400 block">Teplota vzduchu</span>
+                                <span class="text-lg font-extrabold text-white">${cur.temperature_2m} °C</span>
+                            </div>
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                                <span class="text-[11px] text-slate-400 block">Atmosférický tlak</span>
+                                <span class="text-lg font-extrabold text-sky-400">${Math.round(cur.surface_pressure)} hPa</span>
+                            </div>
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                                <span class="text-[11px] text-slate-400 block">Vietor</span>
+                                <span class="text-lg font-extrabold text-emerald-400">${Math.round(cur.wind_speed_10m)} km/h</span>
+                            </div>
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                                <span class="text-[11px] text-slate-400 block">Mesiac</span>
+                                <span class="text-sm font-bold text-amber-400 mt-1 block">${moon.icon} ${moon.name}</span>
+                            </div>
+                        </div>
+                    `;
+                } catch (e) {
+                    showToast('Nepodarilo sa načítať počasie.', 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4"></i> Aktualizovať podmienky`;
+                    lucide.createIcons();
+                }
+            }, () => {
+                showToast('Povoľ prístup k GPS polohe.', 'error');
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4"></i> Aktualizovať podmienky`;
+                lucide.createIcons();
+            });
+        }
+
+        function updateHeaderSubtitle() {
+            const count = state.catches.length;
+            const pbCount = Object.keys(getPersonalBestsMap()).length;
+            document.getElementById('header-subtitle').textContent = `${count} úlovkov • ${pbCount} druhov rýb`;
+        }
+
+        function formatDateSk(isoStr, includeTime = false) {
+            if (!isoStr) return '';
+            const d = new Date(isoStr);
+            if (isNaN(d.getTime())) return isoStr;
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            if (!includeTime) return `${day}.${month}.${year}`;
+            const hours = String(d.getHours()).padStart(2, '0');
+            const mins = String(d.getMinutes()).padStart(2, '0');
+            return `${day}.${month}.${year} o ${hours}:${mins}`;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+
+            let colors = 'bg-slate-800 border-emerald-500/50 text-white';
+            if (type === 'error') colors = 'bg-rose-950 border-rose-500 text-rose-100';
+            if (type === 'pb') colors = 'bg-gradient-to-r from-amber-500 to-orange-500 border-amber-300 text-slate-950 font-extrabold';
+
+            toast.className = `px-4 py-3 rounded-2xl border shadow-xl text-xs font-semibold flex items-center gap-2 max-w-md w-full animate-fade-in ${colors}`;
+            toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, type === 'pb' ? 4500 : 2800);
+        }
+
+        let confirmCallback = null;
+        function openConfirmModal(title, message, onConfirm) {
+            document.getElementById('confirm-title').textContent = title;
+            document.getElementById('confirm-message').textContent = message;
+            confirmCallback = onConfirm;
+            document.getElementById('confirm-modal').classList.remove('hidden');
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirm-modal').classList.add('hidden');
+            confirmCallback = null;
+        }
+
+        document.getElementById('confirm-action-btn').addEventListener('click', () => {
+            if (confirmCallback) confirmCallback();
+            closeConfirmModal();
+        });
+
+        // Spustenie aplikácie po načítaní stránky
+        window.addEventListener('DOMContentLoaded', () => {
+            loadInitialData();
+        });
+    </script>
+</body>
+</html>
